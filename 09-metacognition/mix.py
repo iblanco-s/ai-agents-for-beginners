@@ -14,10 +14,11 @@ import random
 import math
 import sys
 import subprocess
+from duckduckgo_search import DDGS
 
 # Check if required packages are installed
 def check_and_install_packages():
-    required_packages = ['requests', 'bs4', 'matplotlib']
+    required_packages = ['requests', 'bs4', 'matplotlib', 'duckduckgo_search']
     
     for package in required_packages:
         try:
@@ -935,7 +936,7 @@ def retrieve_{entity_type}_data(preferences):
     
     def web_search_hotels(self, destination, check_in_date=None, check_out_date=None, budget=None):
         """
-        Search for hotels using web scraping without requiring API keys.
+        Search for hotels using DuckDuckGo search without requiring API keys.
         
         Args:
             destination (str): The destination city/location
@@ -948,7 +949,7 @@ def retrieve_{entity_type}_data(preferences):
         """
         self._log_reasoning(
             "Web Hotel Search",
-            f"Searching for hotels in {destination} using web scraping",
+            f"Searching for hotels in {destination} using DuckDuckGo",
             f"Parameters: check_in={check_in_date}, check_out={check_out_date}, budget={budget}"
         )
         
@@ -957,94 +958,91 @@ def retrieve_{entity_type}_data(preferences):
             search_query = f"best hotels in {destination}"
             if budget:
                 if budget == "low":
-                    search_query += " budget"
+                    search_query += " budget affordable"
                 elif budget == "moderate":
                     search_query += " mid-range"
                 elif budget == "high":
                     search_query += " luxury"
             
-            # Format the query for URL
-            search_query = search_query.replace(' ', '+')
+            if check_in_date and check_out_date:
+                search_query += f" {check_in_date} to {check_out_date}"
             
-            # Create headers to avoid being blocked
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept-Language': 'en-US,en;q=0.9'
-            }
+            # Initialize the DuckDuckGo search client
+            ddgs = DDGS()
             
-            # Make the request to a search engine
-            url = f"https://www.google.com/search?q={search_query}"
-            response = requests.get(url, headers=headers)
+            # Perform the search (max 25 results)
+            results = list(ddgs.text(search_query, max_results=25))
             
-            if response.status_code == 200:
-                # Parse the HTML content
-                soup = BeautifulSoup(response.text, 'html.parser')
-                
-                # Extract hotel information from search results
+            if results:
+                # Process the search results into hotel data
                 hotels = []
-                result_divs = soup.find_all('div', class_='g')
                 
-                for i, div in enumerate(result_divs[:10]):  # Limit to first 10 results
-                    try:
-                        # Extract title and description
-                        title_element = div.find('h3')
-                        if not title_element:
-                            continue
-                            
-                        title = title_element.text
-                        description_element = div.find('div', class_='VwiC3b')
-                        description = description_element.text if description_element else "No description available"
-                        
-                        # Extract URL
-                        link_element = div.find('a')
-                        link = link_element['href'] if link_element and 'href' in link_element.attrs else "#"
-                        
-                        # Try to extract rating if available
-                        rating_match = re.search(r'(\d\.\d+)/5', description)
-                        rating = float(rating_match.group(1)) if rating_match else random.uniform(3.5, 4.8)
-                        
-                        # Try to extract price if available
-                        price_match = re.search(r'\$(\d+)', description)
-                        if price_match:
-                            price = float(price_match.group(1))
-                        else:
-                            # Assign price based on budget
-                            if budget == "low":
-                                price = random.uniform(80, 150)
-                            elif budget == "moderate":
-                                price = random.uniform(150, 300)
-                            elif budget == "high":
-                                price = random.uniform(300, 800)
-                            else:
-                                price = random.uniform(100, 400)
-                        
-                        # Create hotel object
-                        hotel = {
-                            "id": i + 1000,  # Use high IDs to avoid conflicts with database
-                            "name": title,
-                            "destination": destination,
-                            "price_per_night": round(price, 2),
-                            "rating": round(rating, 1),
-                            "description": description,
-                            "source_url": link,
-                            "from_web_search": True
-                        }
-                        
-                        hotels.append(hotel)
-                    except Exception as e:
+                for i, result in enumerate(results):
+                    # Skip results that are clearly not hotels
+                    title = result.get('title', '')
+                    body = result.get('body', '')
+                    href = result.get('href', '')
+                    
+                    # Simple heuristic to filter out non-hotel results
+                    hotel_keywords = ['hotel', 'resort', 'inn', 'suites', 'lodging', 'accommodation']
+                    booking_sites = ['booking.com', 'expedia', 'hotels.com', 'tripadvisor', 'airbnb']
+                    
+                    is_likely_hotel = (
+                        any(keyword.lower() in title.lower() for keyword in hotel_keywords) or
+                        any(site in href.lower() for site in booking_sites)
+                    )
+                    
+                    if not is_likely_hotel:
                         continue
+                    
+                    # Extract rating if available
+                    rating_match = re.search(r'(\d\.\d+)/5', body) or re.search(r'(\d\.\d+) out of 5', body) or re.search(r'(\d\.\d+) stars', body)
+                    rating = float(rating_match.group(1)) if rating_match else random.uniform(3.5, 4.8)
+                    
+                    # Extract price if available
+                    price_match = re.search(r'\$(\d+)', body) or re.search(r'(\d+) per night', body)
+                    if price_match:
+                        price = float(price_match.group(1))
+                    else:
+                        # Assign price based on budget
+                        if budget == "low":
+                            price = random.uniform(80, 150)
+                        elif budget == "moderate":
+                            price = random.uniform(150, 300)
+                        elif budget == "high":
+                            price = random.uniform(300, 800)
+                        else:
+                            price = random.uniform(100, 400)
+                    
+                    # Prepare title
+                    title_cleaned = re.sub(r' - .*$', '', title)  # Remove everything after dash
+                    title_cleaned = re.sub(r' \|.*$', '', title_cleaned)  # Remove everything after pipe
+                    
+                    # Create hotel object
+                    hotel = {
+                        "id": i + 1000,  # Use high IDs to avoid conflicts with database
+                        "name": title_cleaned,
+                        "destination": destination,
+                        "price_per_night": round(price, 2),
+                        "rating": round(rating, 1),
+                        "description": body,
+                        "source_url": href,
+                        "from_web_search": True
+                    }
+                    
+                    hotels.append(hotel)
                 
                 self._log_reasoning(
                     "Web Hotel Search Results",
-                    f"Found {len(hotels)} hotels for {destination}",
+                    f"Found {len(hotels)} hotels for {destination} using DuckDuckGo",
                     f"Sample result: {json.dumps(hotels[0] if hotels else {}, indent=2)}"
                 )
                 
                 return hotels
             else:
                 self._log_reasoning(
-                    "Web Hotel Search Error",
-                    f"Failed to retrieve search results. Status code: {response.status_code}",
+                    "Web Hotel Search Notice",
+                    f"No results found through DuckDuckGo for {destination}",
                     "Using backup approach with simulated results"
                 )
                 return self._generate_simulated_hotel_results(destination, budget)
@@ -1052,7 +1050,7 @@ def retrieve_{entity_type}_data(preferences):
         except Exception as e:
             self._log_reasoning(
                 "Web Hotel Search Error",
-                f"Error occurred during web search: {str(e)}",
+                f"Error using DuckDuckGo search: {str(e)}",
                 "Using backup approach with simulated results"
             )
             return self._generate_simulated_hotel_results(destination, budget)
@@ -1141,14 +1139,14 @@ if __name__ == "__main__":
     agent = MetacognitiveAgent(client)
     
     # Demonstrate web hotel search functionality
-    print("\n==== DEMONSTRATING WEB HOTEL SEARCH ====")
-    print("Searching for hotels in Barcelona without API keys...")
+    print("\n==== DEMONSTRATING DUCKDUCKGO HOTEL SEARCH ====")
+    print("Searching for hotels in Barcelona using DuckDuckGo (no API key required)...")
     barcelona_hotels = agent.web_search_hotels(
         destination="Barcelona",
         budget="moderate"
     )
     
-    print(f"\nFound {len(barcelona_hotels)} hotels in Barcelona:")
+    print(f"\nFound {len(barcelona_hotels)} hotels in Barcelona via DuckDuckGo:")
     for i, hotel in enumerate(barcelona_hotels[:5]):  # Show up to 5 hotels
         print(f"{i+1}. {hotel['name']}")
         print(f"   Rating: {hotel['rating']}")
@@ -1170,9 +1168,9 @@ if __name__ == "__main__":
     
     # Count hotels that came from web search
     web_hotels_count = sum(1 for hotel in trip_plan["selected_hotels"] if hotel.get('from_web_search', False))
-    print(f"\n==== SELECTED HOTELS ({web_hotels_count} from web search) ====")
+    print(f"\n==== SELECTED HOTELS ({web_hotels_count} from DuckDuckGo search) ====")
     for hotel in trip_plan["selected_hotels"]:
-        source = "(Web Search)" if hotel.get('from_web_search', False) else "(Database)"
+        source = "(DuckDuckGo)" if hotel.get('from_web_search', False) else "(Database)"
         print(f"- {hotel['name']} {source} (Rating: {hotel['rating']}, Price: ${hotel['price_per_night']}/night)")
     
     print("\n==== SELECTED ATTRACTIONS ====")
@@ -1206,9 +1204,9 @@ if __name__ == "__main__":
     
     # Count hotels that came from web search in updated trip
     updated_web_hotels_count = sum(1 for hotel in updated_trip_plan["selected_hotels"] if hotel.get('from_web_search', False))
-    print(f"\n==== SELECTED HOTELS ({updated_web_hotels_count} from web search) ====")
+    print(f"\n==== SELECTED HOTELS ({updated_web_hotels_count} from DuckDuckGo search) ====")
     for hotel in updated_trip_plan["selected_hotels"]:
-        source = "(Web Search)" if hotel.get('from_web_search', False) else "(Database)"
+        source = "(DuckDuckGo)" if hotel.get('from_web_search', False) else "(Database)"
         print(f"- {hotel['name']} {source} (Rating: {hotel['rating']}, Price: ${hotel['price_per_night']}/night)")
     
     print("\n==== SELECTED ATTRACTIONS ====")
