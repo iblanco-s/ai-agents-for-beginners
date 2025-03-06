@@ -270,7 +270,7 @@ def process_user_request(user_query: str, max_turns: int = 5) -> Dict:
     return {
         "response": final_response,
         "source": "model",
-        "model_used": client.model,
+        "model_used": "gpt-4o-mini" if client == simple_client else "gpt-4o",
         "turns": turn_count,
         "execution_time": execution_time
     }
