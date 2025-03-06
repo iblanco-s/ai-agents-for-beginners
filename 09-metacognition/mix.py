@@ -6,7 +6,7 @@ import pandas as pd
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Union
 from azure.core.credentials import AzureKeyCredential
-from azure.ai.client import AzureAIChatCompletionClient
+from openai import AzureOpenAI
 import matplotlib.pyplot as plt
 from diskcache import Cache
 
@@ -29,28 +29,16 @@ evaluation_metrics = {
 }
 
 # Initialize clients for different model sizes
-simple_client = AzureAIChatCompletionClient(
-    model="gpt-4o-mini",  # Smaller model for simpler tasks
-    endpoint="https://models.inference.ai.azure.com",
-    credential=AzureKeyCredential(os.environ["GITHUB_TOKEN"]),
-    model_info={
-        "json_output": False,
-        "function_calling": True,
-        "vision": False,
-        "family": "unknown",
-    },
+simple_client = AzureOpenAI(
+    api_key=os.environ["GITHUB_TOKEN"],  
+    api_version="2023-05-15",
+    azure_endpoint="https://models.inference.ai.azure.com",
 )
 
-complex_client = AzureAIChatCompletionClient(
-    model="gpt-4o",  # Larger model for complex reasoning
-    endpoint="https://models.inference.ai.azure.com",
-    credential=AzureKeyCredential(os.environ["GITHUB_TOKEN"]),
-    model_info={
-        "json_output": False,
-        "function_calling": True,
-        "vision": True,
-        "family": "unknown",
-    },
+complex_client = AzureOpenAI(
+    api_key=os.environ["GITHUB_TOKEN"],
+    api_version="2023-05-15",
+    azure_endpoint="https://models.inference.ai.azure.com",
 )
 
 # Define available tools
@@ -149,7 +137,7 @@ def handle_tool_call(tool_call):
         return f"Unknown function: {function_name}"
 
 # Router function to determine which model to use based on task complexity
-def route_to_appropriate_model(user_query: str) -> AzureAIChatCompletionClient:
+def route_to_appropriate_model(user_query: str) -> AzureOpenAI:
     """
     Routes the query to the appropriate model based on complexity.
     
@@ -233,9 +221,14 @@ def process_user_request(user_query: str, max_turns: int = 5) -> Dict:
         
         # Get response from model
         try:
-            response = client.complete(messages=messages, tools=tools, tool_choice="auto")
+            response = client.chat.completions.create(
+                model=client.model if hasattr(client, 'model') else ("gpt-4o-mini" if client == simple_client else "gpt-4o"),
+                messages=messages,
+                tools=tools,
+                tool_choice="auto"
+            )
             assistant_message = response.choices[0].message
-            messages.append(assistant_message.model_dump())
+            messages.append({"role": assistant_message.role, "content": assistant_message.content})
             
             # Check if the model wants to use a tool
             if assistant_message.tool_calls:
