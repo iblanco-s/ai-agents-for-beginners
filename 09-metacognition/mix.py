@@ -762,7 +762,7 @@ def retrieve_{entity_type}_data(preferences):
                 Create a detailed day-by-day itinerary for a {num_days}-day trip to {itinerary['destination']['name']}.
                 
                 Available Hotels (pick one):
-                {json.dumps([{"name": h['name'], "rating": h['rating'], "amenities": h['amenities']} for h in itinerary.get('hotels', [])], indent=2)}
+                {json.dumps([{"name": h['name'], "rating": h['rating'], "amenities": h.get('amenities', 'WiFi, Breakfast')} for h in itinerary.get('hotels', [])], indent=2)}
                 
                 Available Attractions:
                 {json.dumps([{"name": a['name'], "category": a['category'], "price": a['price'], "description": a['description']} for a in itinerary.get('attractions', [])], indent=2)}
@@ -1018,6 +1018,19 @@ def retrieve_{entity_type}_data(preferences):
                     title_cleaned = re.sub(r' - .*$', '', title)  # Remove everything after dash
                     title_cleaned = re.sub(r' \|.*$', '', title_cleaned)  # Remove everything after pipe
                     
+                    # Generate random amenities based on hotel quality/price
+                    amenities_options = [
+                        "WiFi, Breakfast, Air conditioning",
+                        "WiFi, Room service, TV",
+                        "WiFi, Pool, Fitness center",
+                        "WiFi, Restaurant, Bar",
+                        "WiFi, Spa, Concierge"
+                    ]
+                    
+                    # More expensive hotels get better amenities
+                    amenities_index = min(int(rating - 3), 4) if rating > 3 else 0
+                    amenities = amenities_options[amenities_index]
+                    
                     # Create hotel object
                     hotel = {
                         "id": i + 1000,  # Use high IDs to avoid conflicts with database
@@ -1027,6 +1040,7 @@ def retrieve_{entity_type}_data(preferences):
                         "rating": round(rating, 1),
                         "description": body,
                         "source_url": href,
+                        "amenities": amenities,
                         "from_web_search": True
                     }
                     
