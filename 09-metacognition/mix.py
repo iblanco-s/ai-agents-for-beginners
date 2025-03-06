@@ -6,15 +6,14 @@ import matplotlib.pyplot as plt
 from typing import List, Dict, Any, Tuple
 from datetime import datetime
 import requests
-from azure.ai.openai import OpenAIClient
-from azure.identity import AzureKeyCredential
+from openai import AzureOpenAI
+
 
 # Initialize the Azure AI client
-client = OpenAIClient(
-    endpoint="https://models.inference.ai.azure.com",
-    credential=AzureKeyCredential(os.environ["GITHUB_TOKEN"]),
-    api_version="2024-02-01",
-    api_key=os.environ["GITHUB_TOKEN"]
+client = AzureOpenAI(
+    api_key=os.environ["GITHUB_TOKEN"],  
+    api_version="2023-05-15",
+    azure_endpoint="https://models.inference.ai.azure.com",
 )
 
 # Create a SQLite database for our travel app
