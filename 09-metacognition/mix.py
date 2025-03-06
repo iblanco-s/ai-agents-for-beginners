@@ -317,32 +317,33 @@ def retrieve_{entity_type}_data(preferences):
         disliked_items = feedback.get("disliked", [])
         
         # Use the LLM to generate improved criteria based on feedback
-        messages = [
-            {
-                "role": "system", 
-                "content": "You are a travel expert assistant that helps refine search criteria based on feedback."
-            },
-            {
-                "role": "user", 
-                "content": f"""
-                I have the following preferences for my trip:
-                {json.dumps(self.user_preferences, indent=2)}
-                
-                I liked these items: {', '.join(liked_items) if liked_items else 'None'}
-                I disliked these items: {', '.join(disliked_items) if disliked_items else 'None'}
-                
-                Based on this feedback, suggest specific modifications to my search criteria to improve future results.
-                Return your response as a JSON object with updated preferences.
-                """
-            }
-        ]
+        system_prompt = "You are a travel expert assistant that helps refine search criteria based on feedback."
+        user_prompt = f"""
+        I have the following preferences for my trip:
+        {json.dumps(self.user_preferences, indent=2)}
         
-        response = self.client.complete(messages=messages)
+        I liked these items: {', '.join(liked_items) if liked_items else 'None'}
+        I disliked these items: {', '.join(disliked_items) if disliked_items else 'None'}
+        
+        Based on this feedback, suggest specific modifications to my search criteria to improve future results.
+        Return your response as a JSON object with updated preferences.
+        """
+        
+        messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
+        
+        # Generate improved results using RAG with the model
+        response = self.client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages
+        )
+        
+        # Extract and parse the improved results
+        improved_results_text = response.choices[0].message.content
         
         # Try to extract JSON from the response
         try:
             # Look for JSON-like content in the response
-            response_text = response.content
+            response_text = improved_results_text
             
             # Try to find JSON content (often between triple backticks)
             import re
@@ -560,15 +561,20 @@ def retrieve_{entity_type}_data(preferences):
             }
         ]
         
-        response = self.client.complete(messages=messages)
+        response = self.client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages
+        )
+        
+        response_content = response.choices[0].message.content
         
         self._log_reasoning(
             "Itinerary Quality Assessment",
             "Completed assessment of itinerary quality",
-            response.content
+            response_content
         )
         
-        return response.content
+        return response_content
     
     def improve_itinerary(self, itinerary, reflection):
         """Improve the itinerary based on reflection insights"""
@@ -602,12 +608,17 @@ def retrieve_{entity_type}_data(preferences):
             }
         ]
         
-        response = self.client.complete(messages=messages)
+        response = self.client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages
+        )
+        
+        improved_itinerary_text = response.choices[0].message.content
         
         # Try to extract JSON from the response
         try:
             # Look for JSON-like content in the response
-            response_text = response.content
+            response_text = improved_itinerary_text
             
             # Try to find JSON content (often between triple backticks)
             import re
@@ -708,15 +719,20 @@ def retrieve_{entity_type}_data(preferences):
             }
         ]
         
-        response = self.client.complete(messages=messages)
-        
-        self._log_reasoning(
-            "Day-by-Day Plan Generated",
-            f"Created detailed {num_days}-day itinerary",
-            "Plan generation complete"
+        response = self.client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages
         )
         
-        return response.content
+        day_by_day_plan = response.choices[0].message.content
+        
+        self._log_reasoning(
+            "Day-by-Day Planning",
+            "Generated detailed daily itinerary",
+            day_by_day_plan[:100] + "..." if len(day_by_day_plan) > 100 else day_by_day_plan
+        )
+        
+        return day_by_day_plan
     
     def visualize_itinerary(self, itinerary):
         """Create visualizations for the itinerary"""
